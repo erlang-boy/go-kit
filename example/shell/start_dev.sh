@@ -1,1 +1,1 @@
-./bin/hdbd -config-file ./conf/hive_shell.yaml
+./bin/hdbd -config-file ./conf/shell.yaml

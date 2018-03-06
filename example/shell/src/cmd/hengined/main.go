@@ -1,8 +1,8 @@
 package main
 
 import (
-	. "hive_shell/config"
-	"hive_shell/hsmain"
+	. "shell/config"
+	"shell/hsmain"
 )
 
 func main() {
