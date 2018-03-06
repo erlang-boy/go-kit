@@ -1,0 +1,51 @@
+package httpclient
+
+import (
+	"fmt"
+	"time"
+    "github.com/automation/loggo"
+	"github.com/go-resty/resty"
+)
+
+var logger = loggo.GetLogger("automation.sdk.torrentclient")
+
+type NfsExportParam struct {
+	Path       string   `json:"path"`
+	Groups     []string `json:"groups"`
+	AccessType string   `json:"access"`
+}
+
+func AddNfsExport(p *NfsExportParam, nfsUrl string) error {
+	var fastHttp = gorequest.FastHttp()
+	request := gorequest.New(fastHttp).Timeout(15 * time.Second)
+	logger.Debugf("add nfs export, url:%s, params:%+v", nfsUrl, p)
+	statusCode, body, err := request.Post(nfsUrl).Send(p).EndBytes()
+	if err != nil {
+		logger.Errorf("addNfsExport addr %s failed, err is %+v, params is %+v, response body is %s", nfsUrl, err, p, string(body))
+		return err
+	}
+	if statusCode < 200 || statusCode >= 300 {
+		return fmt.Errorf("addNfsExport %s failed, http status code is %d, params is %+v, response is %+v", nfsUrl, statusCode, p, string(body))
+	}
+	return nil
+}
+
+func RemoveNfsExport(nfsUrl string) error {
+	var fastHttp = gorequest.FastHttp()
+	request := gorequest.New(fastHttp).Timeout(15 * time.Second)
+	logger.Debugf("remove nfs export, url:%s", nfsUrl)
+	statusCode, body, err := request.Post(nfsUrl).EndBytes()
+	if err != nil {
+		logger.Errorf("RemoveNfsExport addr %s failed, err is %+v, status code is %d, response body is %s", nfsUrl, err, statusCode, string(body))
+		return err
+	}
+	if statusCode == 404 || statusCode == 400 {
+		logger.Warnf("ignore %d, return success", statusCode)
+		return nil
+	}
+
+	if statusCode < 200 || statusCode >= 300 {
+		return fmt.Errorf("RemoveNfsExport %s failed, http status code is %d, response body is %s", nfsUrl, statusCode, string(body))
+	}
+	return nil
+}

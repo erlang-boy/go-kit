@@ -1,0 +1,5 @@
+# DEBUG | INFO | WARNING | ERROR | CRITICAL
+log_level: INFO
+hdbd_addr: 0.0.0.0:8081
+hengined_addr: 0.0.0.0:9090
+db_addr: 127.0.0.1:9090

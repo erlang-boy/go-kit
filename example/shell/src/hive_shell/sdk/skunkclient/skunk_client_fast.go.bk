@@ -1,0 +1,157 @@
+package httpclient
+
+import (
+	"fmt"
+	"net/http"
+    "github.com/automation/loggo"
+
+	gorequest "automation/sdk/pkg/request"
+	"strings"
+	"time"
+)
+
+const (
+	CHANGE_HOST_ROUTE = "/vsphere/host/route"
+	PAUSE_VMS         = "/vsphere/host/pausevm"
+	RESUME_VM         = "/vsphere/host/resumevm"
+)
+
+var logger = loggo.GetLogger("automation.sdk.skunkclient")
+
+type ChangeHostRouteParams struct {
+	DataCenter string `json:"datacenter"`
+	Host       string `json:"host"`
+	Network    string `json:"network"`
+	Gateway    string `json:"gateway"`
+	Netmask    string `json:"netmask"`
+}
+
+type ChangeHostRouteRes struct {
+	DataCenter string `json:"datacenter"`
+	Host       string `json:"host"`
+	Route      struct {
+		Network string `json:"network"`
+		Gateway string `json:"gateway"`
+		Netmask string `json:"netmask"`
+	} `json:"route"`
+}
+
+func ChangeHostRoute(endpoint string, params *ChangeHostRouteParams) (*ChangeHostRouteRes, error) {
+	resInfo := ChangeHostRouteRes{}
+	endpoint = strings.TrimSuffix(endpoint, "/")
+	fastHttp := gorequest.FastHttp()
+	request := gorequest.New(fastHttp).Timeout(15 * time.Second)
+	statusCode, body, err := request.Put(endpoint + CHANGE_HOST_ROUTE).Send(params).EndStruct(&resInfo)
+	if err != nil {
+		logger.Errorf("ChangeHostRoute => httpReq.Response failed, err is %s, params is %+v, status code is %d, response body is %s", err, params, statusCode, string(body))
+	}
+	return &resInfo, err
+}
+
+type OptVmsParams struct {
+	DataCenter string `json:"datacenter"`
+	Host       string `json:"host"`
+	NfsAddress string `json:"nfs_address"`
+}
+
+func OptVMs(endpoint, action string, params *OptVmsParams) error {
+	var resInfo struct {
+		Ok string `json:"success"`
+	}
+	endpoint = strings.TrimSuffix(endpoint, "/")
+
+	var fastHttp = gorequest.FastHttp()
+	request := gorequest.New(fastHttp).Timeout(15 * time.Second)
+	statusCode, body, err := request.Put(endpoint + action).Send(params).EndStruct(&resInfo)
+	if err != nil {
+		logger.Errorf("OptVMs => httpReq.Response failed, err is %s, params is %+v, status code is %d, response body is %s", err, params, statusCode, string(body))
+	}
+	if resInfo.Ok != "true" {
+		return fmt.Errorf("OptVms %s => parse result get false, res:%+v", action, resInfo)
+	}
+	return err
+}
+
+type CreateDatastoreParam struct {
+	ProtocolType string   `json:"type"`
+	Datastore    string   `json:"datastore"`
+	TargetHost   string   `json:"target_host"`
+	TargetPath   string   `json:"target_path"`
+	AccessMode   string   `json:"access_mode"`
+	Hosts        []string `json:"hosts"`
+}
+
+type NfsHostInfo struct {
+	Code       int    `json:"code"`
+	NodeId     string `json:"node_id"`
+	Successful bool   `json:"success"`
+	Message    string `json:"message"`
+}
+
+func CreateDatastore(skunkUrl string, p *CreateDatastoreParam) error {
+	var fastHttp = gorequest.FastHttp()
+	request := gorequest.New(fastHttp).Timeout(60 * time.Second)
+
+	res := struct {
+		Result []NfsHostInfo `json:"result"`
+	}{}
+
+	statusCode, body, err := request.Post(skunkUrl).Send(p).EndStruct(&res)
+	if err != nil {
+		logger.Errorf("create datastore addr %s failed, err is %+v, params is %+v, response body is %+v", skunkUrl, err, p, string(body))
+		return err
+	}
+
+	var skunkError string
+	for _, info := range res.Result {
+		if info.Code != 200 {
+			skunkError += "create host:" + info.NodeId + "failed, err is " + info.Message + ";"
+		}
+	}
+	if len(skunkError) != 0 {
+		return fmt.Errorf("create datastore %s failed %s", skunkUrl, skunkError)
+	}
+
+	if statusCode < 200 || statusCode >= 300 {
+		return fmt.Errorf("create datastore %s failed, status code %d, param is %+v, response body is %s", skunkUrl, statusCode, p, string(body))
+	}
+	logger.Debugf("create datastore response:%+v", res)
+	return nil
+}
+
+type RemoveDatastoreParam struct {
+	Datastore string   `json:"datastore"`
+	Hosts     []string `json:"hosts"`
+}
+
+//notes: if hosts or datastore does not exist, return success
+func RemoveDatastore(skunkUrl string, p *RemoveDatastoreParam) error {
+	var fastHttp = gorequest.FastHttp()
+	request := gorequest.New(fastHttp).Timeout(60 * time.Second)
+
+	res := struct {
+		Result []NfsHostInfo `json:"result"`
+	}{}
+
+	statusCode, body, err := request.Post(skunkUrl).Send(p).EndStruct(&res)
+	if err != nil {
+		logger.Errorf("RemoveDatastore addr %s failed, err is %+v, params is %+v, response body is %s", skunkUrl, err, p, string(body))
+		return err
+	}
+
+	var skunkError string
+	for _, info := range res.Result {
+		if info.Code != 200 && info.Code != 404 {
+			skunkError += info.NodeId + ":" + info.Message + ";"
+		}
+	}
+	if len(skunkError) != 0 {
+		return fmt.Errorf("Remove datastore %s failed, error is:%s", skunkUrl, skunkError)
+	}
+
+	if (statusCode < 200 || statusCode >= 300) && statusCode != http.StatusNotFound {
+		return fmt.Errorf("remove datastore %s failed, status code %d, response body is %s, param is %+v", skunkUrl, statusCode, string(body), p)
+	}
+	logger.Debugf("remove datastore response:%+v", res)
+	return nil
+}

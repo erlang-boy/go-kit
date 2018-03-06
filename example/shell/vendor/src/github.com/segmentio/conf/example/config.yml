@@ -1,0 +1,2 @@
+---
+msg: 'hello {{ .USER }}! (from the config file)'
